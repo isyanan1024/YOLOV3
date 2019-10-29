@@ -1,17 +1,21 @@
+# -*- coding: utf-8 -*-
+# @Time    : 2019-10-15 16:40
+# @Author  : Yan An
+# @Contact: an.yan@intellicold.ai
+
 from __future__ import print_function
+
+import os
+import cv2
+import time
+import pynvml
+import random
 import argparse
 import numpy as np
-import cv2
-import os
-import time
-# from hat_classify.test import ishat
-# from mask_classify.test import ismask
 
-
+from utils import *
 from ctypes import *
-import random
-
-VISUALIZATION=True
+from tqdm import tqdm
 
 def sample(probs):
     s = sum(probs)
@@ -138,7 +142,7 @@ def nparray_to_image(img):
     return image
 
 
-def yolo_detect(net, meta, image, thresh=.5, hier_thresh=.5, nms=.45):
+def yolo_detect(net, meta, image, thresh=.5, hier_thresh=.1, nms=.45):
     im = nparray_to_image(image)
     num = c_int(0)
     pnum = pointer(num)
@@ -159,28 +163,36 @@ def yolo_detect(net, meta, image, thresh=.5, hier_thresh=.5, nms=.45):
     free_detections(dets, num)
     return res
 
-gpu_id = c_int(0)
-set_gpu(gpu_id)
+def main(args):
+    gpu_id = c_int(args.gpu_id)
+    set_gpu(gpu_id)
 
-yolo_net = load_net(b"./darknet/cfg/yolov3-800.cfg", 
-    b"./darknet/backup/yolov3-800_final.weights", 0)
-meta = load_meta(b"./darknet/cfg/voc.data")
-print('Finished loading model!')
+    info = load_dict()
 
-path = '/home/yana/LONGJING/YOLOV3/darknet/dataset/img'
-pictures = os.listdir(path)
+    input_size = info['input_size']
+    yolo_net = load_net(('./darknet/cfg/yolov3-' + str(input_size) + '_test.cfg').encode(),
+                ('./darknet/backup/yolov3-' + str(input_size) + '.backup').encode(), 0)
+    meta = load_meta(b'./darknet/cfg/voc.data')
+    print('Finished loading model!')
 
-resumes = []
-for picture in pictures:
-    if picture.endswith('.jpg'):
-        picture_path = os.path.join(path,picture)
-        print(picture_path)
-        image = cv2.imread(picture_path)
+    labels = [x for x in info['classes'].keys()]
+
+    f = open('./darknet/dataset/valid.txt')
+    test_picures_path = f.readlines()
+
+    resumes = []
+    for picture in tqdm(test_picures_path):
+        picture = picture.replace('\n', '')
+
+        txt_name = picture.split('/')[-1].replace('jpg','txt')
+        f2 = open('results_txt/' + txt_name, 'w', encoding = 'utf-8')
+        image = cv2.imread(picture)
         begin = time.time()
         yolo_dets = yolo_detect(yolo_net, meta, image)
         resume = time.time() - begin
         resumes.append(resume)
-        print(1/(sum(resumes)/len(resumes)))
+        FPS = 1/(sum(resumes)/len(resumes))
+        print('FPS: ',FPS)
 
         # visulization
         person_boxes = []
@@ -193,31 +205,29 @@ for picture in pictures:
             y1 = cy - h / 2
             x2 = cx + w / 2
             y2 = cy + h / 2
-            # head_image = image[int(y1):int(y2),int(x1):int(x2)]
-            # head_image = head_image[...,::-1]
-            # hat_result = ishat(head_image)
-            # mask_result = ismask(head_image)
-            # if hat_result == 0:
-            #     cv2.putText(image,'chefhat',(int(x1-5),int(y1-5)),cv2.FONT_HERSHEY_COMPLEX,1,(0,255,0),1)
-            # else:
-            #     flag = False
-            #     cv2.putText(image,'no_chefhat',(int(x1-5),int(y1-5)),cv2.FONT_HERSHEY_COMPLEX,1,(0,0,255),1)
-
-            # if mask_result == 0:
-            #     cv2.putText(image,'mask',(int(x1-5),int(y1-30)),cv2.FONT_HERSHEY_COMPLEX,1,(0,255,0),1)
-            # if mask_result == 1:
-            #     flag = False
-            #     cv2.putText(image,'no_mask',(int(x1-5),int(y1-30)),cv2.FONT_HERSHEY_COMPLEX,1,(0,0,255),1)
-            # if mask_result == 2:
-            #     cv2.putText(image,'uncertain_mask',(int(x1-5),int(y1-30)),cv2.FONT_HERSHEY_COMPLEX,1,(0,255,0),1)
-
-            if flag:
+            label = det[0].decode()
+            index = labels.index(label)
+            f2.write(str(index) + ' ' + str(int(x1 + 0.5)) + ' ' + str(int(y1 + 0.5)) + ' ' + str(int(x2 + 0.5)) + ' ' + str(int(y2 + 0.5)) + '\n')
+            if args.save_pic:
                 cv2.rectangle(image,(int(x1),int(y1)),(int(x2),int(y2)),(0,255,0),2)
-            else:
-                cv2.rectangle(image,(int(x1),int(y1)),(int(x2),int(y2)),(0,0,255),2)
-            # with open('txt_pre/'+picture.replace('jpg','txt'),'a+',encoding='utf-8') as f:
-            #     f.write(str(x1) + ' ' + str(y1) + ' ' + str(x2) + ' ' + str(y2) + '\n')
-        cv2.imwrite(picture,image)
+                cv2.putText(image,label,(int(x1), int(y1) - 10),cv2.FONT_HERSHEY_SIMPLEX,2,(0, 0, 255), 2)
+        if args.save_pic:
+            cv2.imwrite('results/'+picture.split('/')[-1],image)
+    f.close()
+    write_dict('FPS', int(FPS))
+
+    GPU_type, GPU_used = get_gpu_info(args.gpu_id)
+    write_dict('GPU_type: ',GPU_type)
+    write_dict('GPU_used: ',str(int(GPU_used)) + 'M')
+    
+
+if __name__ == '__main__':
+    print('detecting...')
+    parser = argparse.ArgumentParser('detect images')
+    parser.add_argument("--gpu_id", type=int, default=0, help="which gpu to use")
+    parser.add_argument("--save_pic", type=bool, default=False, help="whether pic to save")
+    arguments = parser.parse_args()
+    main(args=arguments)
 
 
 

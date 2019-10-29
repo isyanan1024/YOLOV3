@@ -1,6 +1,0 @@
-classes= 1
-train  = /home/yana/LONGJING/YOLOV3/darknet/dataset/train.txt
-valid  = /home/yana/LONGJING/YOLOV3/darknet/dataset/valid.txt
-names = /home/yana/LONGJING/YOLOV3/darknet/data/voc.names
-backup = backup
-
