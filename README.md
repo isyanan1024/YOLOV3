@@ -2,7 +2,7 @@
 
 ## 训练
 
-运行bash run.sh自动完成数据分类、训练和评估，结果在info.txt中。需要先下载darknet53.conv.74在darknet文件夹下。
+运行bash run.sh自动完成数据分类、训练和评估，结果在info.txt中。需要先下载darknet53.conv.74（链接:https://pan.baidu.com/s/1wQicuVidzUn0-3I--oEzxw  密码:1kot）在darknet文件夹下。
 
 info.txt展示：
 
